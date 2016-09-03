@@ -1,0 +1,23 @@
+{
+    "imageDir" : "/home/mark/qimages",
+    "maxpasses" : 0,
+    "bank0-spi" : 1,
+    "bank0-i2c" : 2,
+    "bank1-spi" : 2,
+    "bank1-i2c" : 1,
+    "cameramask" : "0x11",
+    "busSpeed" : 4000000,
+    "isJPEG" : 1,
+    "imageBufferSizeInKb" : 32,
+    "camSelectGPIO" : "60,49,117,115",
+    "resolution" : "R1600x1200",
+    "maxBurstBlockSize" : 4096,
+    "cameraTimeoutmSec" : 750,
+    "maxFifoReadAttempts" : 5,
+    "acquisitionMode" : 2
+}
+
+    
+    
+    
+    
