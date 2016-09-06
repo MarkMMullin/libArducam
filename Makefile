@@ -12,19 +12,20 @@ else
 	BUILDDIR=rls
 endif
 DEFINES := -DMAJORVER=\"$(MAJOR)\" -DMINORVER=\"$(MINOR)\" -DPATCHVER=\"$(PATCH)\" -DBUILDVER=\"$(BUILD)\" -DBUILDTYPE=\"$(BUILDNAME)\"
-INCLUDES := -Iinc
+INCLUDES := -Iinc -I../libMMMUtil/inc
 AR 	:= ar
 CXX      := g++
 CXXFLAGS := -Wall -pedantic -std=c++11 $(BUILDFLAGS) $(DEFINES) $(INCLUDES)
 
 SOURCES := $(wildcard src/*.cpp)
 OBJECTS := $(SOURCES:src/%.cpp=obj/$(BUILDDIR)/%.o)
-LIBS=-lpthread  -L. -lArducam 
+LIBS=-lpthread  -L. -lArducam -L../libMMMUtil -lMMMUtil
 LIBNAME := libArducam.a
 all:  libArducam.a examples
+	@echo "libArducam OK] "
 
 libArducam.a: $(OBJECTS) 
-	@echo -n " libArducam"
+	@echo -n " libArducam "
 	@$(AR) rcs $(LIBNAME) $(OBJECTS)
 
 obj/$(BUILDDIR)/%.o : src/%.cpp
@@ -52,11 +53,7 @@ buildinfo.inc : $(OBJECTS)
 
 .PHONY: clean all
 clean:
-	rm -fr obj
-	rm libArducam.a
-	rm simpleshooter
-	mkdir -p obj/dbg
-	mkdir -p obj/rls
+	./clean.sh
 
 
 

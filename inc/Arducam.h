@@ -34,7 +34,7 @@
 
 #include <linux/i2c-dev.h>
 #include <linux/spi/spidev.h>
-//  Abaddon headers
+
 #include "SensorRegister.h"
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -82,6 +82,8 @@ public:
 	virtual void initializeSensor() = 0;
 	// change the camera resolution WITHOUT reprogramming the sensor
 	virtual void changeResolution(EResolution newResolution) = 0;
+	// load programming into the sensor registers
+	virtual void programSensor(const struct sensor_reg regList[]) = 0;
 	// true if the sensors reported type matches the class type (it better!)
 	bool isCorrectSensor();
 	virtual ~Arducam();
@@ -128,6 +130,9 @@ public:
 		clear_fifo_flag();
 		return result;
 	}
+	// return the last image the camera obtained - used to ameliorate races
+	uint8_t* getLastImageBuffer(uint8_t* copyBuffer,uint32_t& bufferSize);
+	//  current camera resolution code
         EResolution getResolution() const { return m_resolution; }
 	//todo default resolution needs to be per sensor type
 	// set default global resolution for camera initialization
@@ -153,8 +158,9 @@ public:
 	inline void delayms(uint32_t delay) const {
 		usleep(1000 * delay);
 	}
-	
-
+	inline void delayus(uint32_t delay) const {
+		usleep( delay);
+	}
 protected:
 	// reset the camera
 	bool reset();
@@ -167,11 +173,7 @@ protected:
 	// handles buffered reading of individual bytes
 	uint8_t burstReadByte(int remaining);
 
-	inline uint8_t wrSensorReg8_8(uint8_t regID, uint8_t regDat) {
-	  uint8_t wbuf[2]={regID,regDat}; //first byte is address to write. others are bytes to be written
-	  write(m_I2CFD, wbuf, 2);
-	  return 1;
-	}
+        uint8_t wrSensorReg8_8(uint8_t regID, uint8_t regDat);
 
 	inline uint8_t rdSensorReg8_8(uint8_t regID, uint8_t* regDat) {
 	  char read_start_buf[1] = {regID};
@@ -235,13 +237,12 @@ protected:
 	  // Write image data to buffer if not full
 	  if (m_bufferIndex < sm_imageBufferSize) {
 	    sm_imageBuffer[imageBufferNumber()][m_bufferIndex++] = writeByte;
-	  } else {
-	    // Write BUF_SIZE uint8_ts image data to file
-	    fwrite(sm_imageBuffer[imageBufferNumber()], sm_imageBufferSize, 1, fp);
-	    m_bufferIndex = 0;
-	    sm_imageBuffer[imageBufferNumber()][m_bufferIndex++] = writeByte;
-	  }
+	  } else
+	    writeInterimImageBytes(writeByte,fp);
 	}
+	void writeInterimImageBytes(uint8_t writeByte,FILE* fp);
+        void flushImageBuffer(FILE* fp);
+
 	inline int imageBufferNumber() { return  m_cameraNo > 3 ? 1 : 0; }
 	// return true if the SPI bus is operational (0 tries forces fail)
 	inline bool testSPIBus(int tries) const {
@@ -300,10 +301,16 @@ protected:
         EResolution m_resolution;
         // name of the last written image file
         std::string m_lastFilename;
+	// buffer of the last written image
+	uint8_t* m_imageBuffer;
+	uint32_t m_imageBufferDeposit;
+	uint8_t* m_lastImageBuffer;
+	uint32_t m_lastImageBufferSize;
 	// sensor program realizing camera resolution
         const sensor_reg* m_resolutionProgram;
-
-	
+	// gate for updating the lastImageBuffer data
+	pthread_mutex_t m_lastImageBufferMutex;
+	void updateImageBuffer();
 	static uint8_t* sm_imageBuffer[2];
 	static uint32_t sm_imageBufferSize;
 	static uint16_t sm_maxBurstBlockSize;

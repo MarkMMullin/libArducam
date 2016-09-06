@@ -23,6 +23,7 @@
 #include <thread>
 #include <string>
 class CameraManager {
+  friend class Arducam;
   friend class CameraConfig;
   friend void bankImageCaptureDriver(int highBankFlag);
  public:
@@ -50,11 +51,13 @@ class CameraManager {
         }
  private:
   CameraManager();
+  int countOutputDirectories();
   void allocateCameras();
   inline int getCameraBank(int cameraNumber) { return cameraNumber / 4; }
   inline int getCameraIndex(int cameraNumber) { return cameraNumber % 4;}
    bool saveCamera(int cameraNumber);
-
+   std::string createFilename(int cameraNumber);
+   void createBundle();
   Arducam* m_cameras[8];
   long m_timeouts[8];
   long m_reads[8];
@@ -64,11 +67,14 @@ class CameraManager {
   std::thread m_threads[2];
   int m_frameCount[8];
   bool m_kill = false;
+  int m_bundleNumber;
+  int m_bundleCapacity;
 
   static CameraManager* m_singleton;
   static int sm_timeoutmSecs;
   static int sm_activeCameras;
   static int sm_maxPasses;
+  static bool sm_recordingOn;
   static std::string sm_imageDir;
 };
 #endif

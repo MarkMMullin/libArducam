@@ -100,6 +100,7 @@ void CameraConfig::Load(configuru::Config& cfg)
   CameraManager::sm_maxPasses = (int) cfg["maxpasses"];
   CameraManager::sm_timeoutmSecs = (int) cfg["cameraTimeoutmSec"];
   CameraManager::sm_imageDir = (string) cfg["imageDir"];
+  CameraManager::sm_recordingOn = (int) cfg["recordingOn"] != 0;
   string ac = (string) cfg["cameramask"];
   int x = strtol(ac.c_str(), NULL, 16);
   CameraManager::sm_activeCameras = x;

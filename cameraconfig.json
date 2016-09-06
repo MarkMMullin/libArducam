@@ -1,5 +1,6 @@
 {
     "imageDir" : "/home/mark/qimages",
+    "recordingOn" : 1,
     "maxpasses" : 0,
     "bank0-spi" : 1,
     "bank0-i2c" : 2,

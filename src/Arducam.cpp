@@ -19,6 +19,7 @@
 */
 // standard headers
 #include <string>
+#include <vector>
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -27,9 +28,14 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <linux/i2c-dev.h>
-// Abaddon headers
+
+#include "MMMDEFINES.h"
 #include "Arducam.h"
 #include "CameraBank.h"
+#include "CameraManager.h"
+
+#define DO_GPIO_RESET 0
+#define LOG_INFO 1
 // Arducam::
 uint16_t Arducam::sm_fifoReadAttempts = 2;
 uint16_t Arducam::sm_maxBurstBlockSize = 1024;
@@ -52,10 +58,16 @@ Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
   m_burstReadBuffer = new uint8_t[sm_maxBurstBlockSize + 16];
   m_burstWriteBuffer = new uint8_t[sm_maxBurstBlockSize + 16];
   m_acquisitionMode = sm_acquisitionMode;
+  m_imageBuffer = new uint8_t[390000];
+  m_imageBufferDeposit = 0;
+  m_lastImageBuffer = new uint8_t[390000];
+  m_lastImageBufferSize = 0;
+  pthread_mutex_init(&m_lastImageBufferMutex, NULL);
 }
 
 Arducam::~Arducam() {
-  // TODO Auto-generated destructor stub
+  SAFE_DELETE(m_imageBuffer);
+  SAFE_DELETE(m_lastImageBuffer);
 }
 
 bool Arducam::isCorrectSensor()
@@ -81,6 +93,9 @@ bool Arducam::powerUp() {
       fprintf(stderr,"warning:powerup spi check failed on camera %d\n",m_cameraNo);
       return false;
     }
+  
+  // Change MCU mode
+  write_reg(ARDUCHIP_MODE, MCU2LCD_MODE);
 #if LOG_INFO
   fprintf(stderr,"info:powerup spi check complete on camera %d\n",m_cameraNo);
   uint8_t arduchipRev = read_reg(ARDUCHIP_REV);
@@ -99,8 +114,6 @@ bool Arducam::powerUp() {
 #if LOG_INFO
   fprintf(stderr,"info:powerup i2c sensor version check complete on camera %d\n",m_cameraNo);
 #endif
-  // Change MCU mode
-  write_reg(ARDUCHIP_MODE, MCU2LCD_MODE);
   // sensor initialization
   initializeSensor();
   sleep(1); // Let auto exposure do it's thing after changing image settings
@@ -129,7 +142,7 @@ bool Arducam::reset()
       break;
     }
     write_reg(ARDUCHIP_GPIO,0x15);
-    delayms(500);
+    delayms(100);
     if(ctr-- <= 0) {
       return false;
     }
@@ -190,9 +203,12 @@ bool Arducam::serialRead(FILE *fp) {
 	// }
       }
   }
+  SAFE_DELETE(m_imageBuffer);
   // Write the remain uint8_ts in the buffer
   if (deposit > 0) {
     fwrite(buffer, deposit, 1, fp);
+    m_imageBuffer = new uint8_t[deposit];
+    memcpy(m_imageBuffer,buffer,deposit);
   }
   return true;
 }
@@ -229,9 +245,7 @@ bool Arducam::tightSerialRead(FILE *fp) {
     writeImageByte(temp,fp);
   }
   // Write the remain uint8_ts in the buffer
-  if (i > 0) {
-    fwrite(sm_imageBuffer[imageBufferNumber()], i, 1, fp);
-  }
+  flushImageBuffer(fp);
   return true;
 }
 //@config[maxBurstBlockSize] - max size of burst block transfer element - larger sizes are more efficient, but they starve the fifos for attention which
@@ -307,17 +321,15 @@ bool Arducam::burstRead(FILE *fp) {
 
 	temp = burstReadByte(length);
 	if((temp == 0xD8) & (temp_last == 0xFF))
-	{
-	  // image has started, write the segment marker to the file
-	  isImageData = true;
-	  writeImageByte(temp_last,fp);
-	  writeImageByte(temp,fp);
-	}
+	  {
+	    // image has started, write the segment marker to the file
+	    isImageData = true;
+	    writeImageByte(temp_last,fp);
+	    writeImageByte(temp,fp);
+	  }
       }
     }
-  if (m_bufferIndex > 0) {
-    fwrite(sm_imageBuffer[imageBufferNumber()], m_bufferIndex, 1, fp);
-  }
+  flushImageBuffer(fp);
   fflush(fp);
   return isImageData;
 }
@@ -345,7 +357,6 @@ Arducam::EResolution Arducam::parseResolution(const std::string& resolution) {
   else
     return R320x240;
 }
-
 
 void Arducam::bus_write(uint8_t address, uint8_t value) const
 {
@@ -467,27 +478,59 @@ uint8_t Arducam::rdSensorReg16_8(uint16_t regID, uint8_t* regDat)
   return 1;
 }
 
+uint8_t Arducam::wrSensorReg8_8(uint8_t regID, uint8_t regDat)
+{
+  uint8_t wbuf[2]={regID,regDat}; //first byte is address to write. others are bytes to be written
+  write(m_I2CFD, wbuf, 2);
+	      if(regID == 0xFF)
+		delayms(200);
+  return 1;
+}
+
 int Arducam::wrSensorRegs8_8(const struct sensor_reg reglist[])
 {
-#if 1
-  const struct sensor_reg *next = reglist;
-  while((next->reg != 0xff) || (next->val != 0xff)) {
-    wrSensorReg8_8(next->reg, next->val);
-    next++;
-  } 
+  int baseIndex = 0;
+  int testIndex = 1;
+  bool isEOF = false;
+  while(!isEOF)
+    {
+      isEOF = reglist[testIndex].reg == 0xFF && reglist[testIndex].val == 0xFF;
+      bool isMatch = reglist[testIndex].reg == reglist[baseIndex].reg;
+      isMatch = false;
+      if(!isMatch || isEOF)
+	{
+	  if(baseIndex + 1 == testIndex)
+	    {
+	      uint8_t reg = (uint8_t) (reglist[baseIndex].reg & 0xFF);
+	      uint8_t val =  (uint8_t) (reglist[baseIndex].val & 0xFF);
+	       uint8_t wbuf[2]={reg,val}; //first byte is address to write. others are bytes to be written
+	       write(m_I2CFD, wbuf, 2);
+	       //fprintf(stderr,"0x%02x,0x%02x\n",reg , val);
+	      if(reg == 0xFF)
+		delayms(200);
+	    }
+	  else
+	    {
+	      std::vector<uint8_t> regseq;
+	      uint16_t numWriteBytes = 1 + (testIndex - baseIndex);
+	      regseq.reserve(numWriteBytes);
+	      regseq.push_back(reglist[baseIndex].reg);
+	      for(int ri = baseIndex;ri < testIndex;ri++)
+		regseq.push_back(reglist[ri].val);
+	      uint8_t* regwritedata = &regseq[0];
+	      write(m_I2CFD, regwritedata,numWriteBytes );
+	      //for(int i = 0;i < numWriteBytes;i++)
+	      //	fprintf(stderr,"0x%02x,0x%02x,\tseq = %d\n",reglist[baseIndex].reg,regseq[i],i);
+	      delayms(200);
+			
+	    }
+	  baseIndex = testIndex;
+	}
+     
+      testIndex++;
+    }
+
   return 1;
-#else
-   uint16_t reg_addr = 0;
-  uint16_t reg_val = 0;
-  const struct sensor_reg *next = reglist;
-  do {
-    reg_addr = pgm_read_word(&next->reg);
-    reg_val = pgm_read_word(&next->val);
-    wrSensorReg8_8(reg_addr, reg_val);
-    next++;
-  } while((reg_addr != 0xff) || (reg_val != 0xff));
-  return 1;
-#endif
 }
 
 
@@ -522,4 +565,42 @@ int Arducam::wrSensorRegs16_8(const struct sensor_reg reglist[])
   return 1;
 }
 
+void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
+{	
 
+  // Write BUF_SIZE uint8_ts image data to file
+  if(CameraManager::sm_recordingOn)
+    fwrite(sm_imageBuffer[imageBufferNumber()], sm_imageBufferSize, 1, fp);
+  memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],sm_imageBufferSize);
+  m_imageBufferDeposit += sm_imageBufferSize;
+  m_bufferIndex = 0;
+  sm_imageBuffer[imageBufferNumber()][m_bufferIndex++] = writeByte;
+
+}
+void Arducam::flushImageBuffer(FILE* fp)
+{
+  if(m_bufferIndex > 0)
+    {
+      if(CameraManager::sm_recordingOn)
+	fwrite(sm_imageBuffer[imageBufferNumber()], m_bufferIndex, 1, fp);
+      memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],m_bufferIndex);
+      m_imageBufferDeposit += m_bufferIndex;
+      m_bufferIndex = 0;
+    }
+  pthread_mutex_lock (&m_lastImageBufferMutex);
+  memcpy(m_lastImageBuffer,m_imageBuffer,m_imageBufferDeposit);
+  m_lastImageBufferSize = m_imageBufferDeposit;
+  pthread_mutex_unlock (&m_lastImageBufferMutex);
+  fprintf(stderr,"copy buffer store size %d\n",m_lastImageBufferSize);
+  m_imageBufferDeposit = 0;
+}
+
+uint8_t* Arducam::getLastImageBuffer(uint8_t* copyBuffer,uint32_t& bufferSize)
+{
+  pthread_mutex_lock (&m_lastImageBufferMutex);
+  bufferSize = m_lastImageBufferSize;
+  memcpy(copyBuffer,m_lastImageBuffer,bufferSize);
+  pthread_mutex_unlock (&m_lastImageBufferMutex);
+  fprintf(stderr,"copy buffer FETCH size %d\n",m_lastImageBufferSize);
+  return copyBuffer;
+}

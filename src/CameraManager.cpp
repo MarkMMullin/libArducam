@@ -27,6 +27,9 @@
 #include <thread>
 #include <iostream>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
 
 #include "CameraBank.h"
 #include "CameraManager.h"
@@ -38,12 +41,16 @@ CameraManager* CameraManager::m_singleton = NULL;
 int CameraManager::sm_timeoutmSecs = 0;
 int CameraManager::sm_activeCameras = 0;
 int CameraManager::sm_maxPasses = 0;
+bool CameraManager::sm_recordingOn = 0;
 std::string CameraManager::sm_imageDir;
 timeval sLastReportTime;
 
-
+const int BUNDLECAPACITY = 5000;
 CameraManager::CameraManager()
 {
+
+  m_bundleNumber = countOutputDirectories();
+  createBundle();
   for(int i = 0;i < 8;i++)
     {
       m_fails[i] = 0;
@@ -78,7 +85,7 @@ void bankImageCaptureDriver(int highBankFlag)
   int passCount = 0;
   while(!cm->m_kill) {
     try {
-       camIndex = (camIndex + 1) % 4;
+      camIndex = (camIndex + 1) % 4;
       int bankAddress = bankOffset + camIndex;
 
       Arducam* theCam = cm->getCamera(bankAddress);
@@ -124,7 +131,7 @@ void bankImageCaptureDriver(int highBankFlag)
 
       pthread_yield();
       // update sample time stats
-           timeval currentTime;
+      timeval currentTime;
       gettimeofday(&currentTime, NULL);
       double dseconds  = currentTime.tv_sec  - cm->m_lastSampleTime[bankAddress].tv_sec;
       double duseconds  = currentTime.tv_usec  - cm->m_lastSampleTime[bankAddress].tv_usec;
@@ -179,9 +186,9 @@ void CameraManager::allocateCameras()
 	m_cameras[i] = NULL;
 	continue;
       }
-	mask = mask * 2;
+      mask = mask * 2;
 #if LOG_INFO
-	fprintf(stderr,"info:testing camera %d\n",i);
+      fprintf(stderr,"info:testing camera %d\n",i);
 #endif
       int cameraBank = i / 4;
       // Allocating camera i,cameraBank,cameraIndex
@@ -207,7 +214,7 @@ void CameraManager::allocateCameras()
 #else
         newCam->powerUp();
 #endif
-     }
+      }
       catch(const char*x)
 	{
 	  fprintf(stderr,x);
@@ -222,41 +229,94 @@ void CameraManager::allocateCameras()
     }
 }
 
-bool CameraManager::saveCamera(int cameraNumber) {
-  char fname[32];
+std::string CameraManager::createFilename(int cameraNumber)
+{
   timeval curTime;
-	
-  
+  char fname[256];
+  gettimeofday(&curTime, NULL);
+    sprintf(fname, "%s/bundle_%d//C%d-%lu.%lu.jpg",
+	  sm_imageDir.c_str(),
+	    m_bundleNumber,
+	  cameraNumber,
+	  curTime.tv_sec,
+	  curTime.tv_usec);
+    return std::string(fname);
+}
+
+bool CameraManager::saveCamera(int cameraNumber) {
+  std::string filename = createFilename(cameraNumber);
+
   FILE *fp = NULL;
   int retries = 1000;
-  while(fp == NULL && retries > 0)
+  if(CameraManager::sm_recordingOn)
     {
-      sprintf(fname, "%s/C%d-%lu.%ul.jpg",sm_imageDir.c_str(), cameraNumber,curTime.tv_sec,(unsigned int) curTime.tv_usec);
-      fp = fopen(fname, "w");
-      if(!fp)
+      while(fp == NULL && retries > 0)
 	{
-	  fprintf(stderr,"filesystem stuttering\n");
-	--retries;
-	
-	gettimeofday(&curTime, NULL);
+      
+	  fp = fopen(filename.c_str(), "w");
+	  if(!fp)
+	    {
+	      fprintf(stderr,"filesystem stuttering\n");
+	      --retries;
+	      filename = createFilename(cameraNumber);
+	      
+	    }
 	}
-    }
   
-  if (!fp) {
-    printf("Error: could not open %s\n", fname);
-    return false;
-  }
+      if (!fp) {
+	printf("Error: could not open %s\n", filename.c_str());
+	return false;
+      }
+    }
   //fprintf(stderr,"transfer %d\n",cameraNumber);
   bool result = false;
   result = m_cameras[cameraNumber]->transferImageBufferToFile(fp);
-  fclose(fp);
-  if(result == false)
-    remove(fname);
-  else
-  {
-    std::string fn(fname);
-    m_cameras[cameraNumber]->setLastSave(fn.c_str());
-  }
+  if(CameraManager::sm_recordingOn)
+    {
+      fclose(fp);
+      if(result != false)
+	{
+	  if(--m_bundleCapacity < 0)
+	    {
+	      ++m_bundleNumber;
+	      createBundle();
+	    }
+	}
+      else
+	remove(filename.c_str());
+    }
+  if(result)
+      m_cameras[cameraNumber]->setLastSave(filename.c_str());
   return result;
 }
+void CameraManager::createBundle()
+{
+  char dirName[256];
+  sprintf(dirName,"%s/bundle_%d",
+	  CameraManager::sm_imageDir.c_str(),
+	  m_bundleNumber);
+  
+    mkdir(dirName, 0777);
+    
+    m_bundleCapacity = BUNDLECAPACITY;
+}
+int CameraManager::countOutputDirectories()
+{
 
+  struct dirent *dp;
+  DIR *fd;
+
+  if ((fd = opendir(CameraManager::sm_imageDir.c_str())) == NULL) {
+    fprintf(stderr, "listdir: can't open %s\n", CameraManager::sm_imageDir.c_str());
+    return -1;
+  }
+  int numBundles = 0;
+  while ((dp = readdir(fd)) != NULL) {
+  if (!strcmp(dp->d_name, ".") || !strcmp(dp->d_name, ".."))
+    continue;    /* skip self and parent */
+  if(strncmp("bundle",dp->d_name,6) == 0)
+    ++numBundles;
+  }
+  closedir(fd);
+  return numBundles;
+}

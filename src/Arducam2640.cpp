@@ -19,11 +19,30 @@
  */
 #include "Arducam2640.h"
 
+#define LOG_INFO 1
 const uint8_t OV2640_CHIPID_HIGH = 0x0A;
 const uint8_t OV2640_CHIPID_LOW =  0x0B;
 
-// bring in the register sets
-#include "CameraProgram2640.h"
+
+// LOAD ALL OF THE PROGRAM DEFINITIONS FOR THE OV2640
+
+#include "sensor_programs/registerDefinitions.h"
+#include "sensor_programs/OV2640_1024x768_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_1280x1024_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_1600x1200_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_160x120_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_176x144_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_320x240_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_352x288_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_640x480_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_800x600_JPEG.regpgm.h"
+
+#include "sensor_programs/OV2640_JPEG.regpgm.h"
+#include "sensor_programs/OV2640_JPEG_INIT.regpgm.h"
+#include "sensor_programs/OV2640_QVGA.regpgm.h"
+#include "sensor_programs/OV2640_YUV422.regpgm.h"
+
+
 
 Arducam2640::Arducam2640(int cameraNumber,CameraBank* cameraBank,int SPIFD,int I2CFD) : Arducam(cameraNumber,cameraBank,SPIFD,I2CFD)
 {
@@ -56,22 +75,26 @@ uint8_t Arducam2640::getLowDeviceIdByte()
  void Arducam2640::initializeSensor()
  {
    if(sm_isJPEG) {
+     // sensor system reset
      wrSensorReg8_8(0xff, 0x01);
      wrSensorReg8_8(0x12, 0x80);   // system reset
-     delayms(100);
+     delayms(1000);
      
 #if LOG_INFO
      fprintf(stderr,"info:: load jpeg init\n");
 #endif
      wrSensorRegs8_8(OV2640_JPEG_INIT);
+     
 #if LOG_INFO
      fprintf(stderr,"info:: load yuv422 init\n");
 #endif
      wrSensorRegs8_8(OV2640_YUV422);
+     
 #if LOG_INFO
      fprintf(stderr,"info:: load jpeg\n");
 #endif
      wrSensorRegs8_8(OV2640_JPEG);
+     // write COM10 - CHSYNC AND HREF NOT SWAPPED,PCLK OUT,ON FALLING CLOCK,POSITIVE HREF,POSITIVE VSYNC,POSITIVE HSYNC
      wrSensorReg8_8(0xff, 0x01);
      wrSensorReg8_8(0x15, 0x00);
 #if LOG_INFO
@@ -129,4 +152,8 @@ bool Arducam2640::setResolution(EResolution resolution) {
   m_resolutionProgram = resolutionProgram;
   m_resolution = resolution;
   return true;
+}
+void Arducam2640::programSensor(const struct sensor_reg regList[])
+{
+  wrSensorRegs8_8(regList);
 }

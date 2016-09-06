@@ -1,0 +1,15 @@
+{
+	"pgm" : [
+	["0xff","0x00","001   Register Bank Select =  DSP(00)/DSP "],
+	["0x05","0x00","002   Bypass DSP =  Use the internal DSP/USE_DSP "],
+	["0xda","0x10","003   Image Output Format Select =  JPEG_EN(10)/JPEG_EN  |  YUV422(00)/YUV422 "],
+	["0xd7","0x03","004   RB0_RSVD_d7 = 0x03"],
+	["0xdf","0x00","005   RB0_RSVD_df = 0x00"],
+	["0x33","0x80","006   RB0_RSVD_33 = 0x80"],
+	["0x3c","0x40","007   RB0_RSVD_3c = 0x40"],
+	["0xe1","0x77","008   RB0_RSVD_e1 = 0x77"],
+	["0x00","0x00","009   RB0_RSVD_00 = 0x00"],
+	["0xFF","0xFF"]
+	]
+}
+

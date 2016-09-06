@@ -26,6 +26,7 @@ class Arducam2640 : public Arducam
   Arducam2640(int cameraNumber,CameraBank* cameraBank,int SPIFD,int I2CFD);
   virtual void changeResolution(EResolution newResolution) ;
   virtual bool setResolution(EResolution resolution);
+  virtual void programSensor(const struct sensor_reg regList[]);
  protected:
   virtual  bool testHighDeviceIdByte();
   virtual uint8_t getHighDeviceIdByte();

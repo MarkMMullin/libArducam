@@ -116,7 +116,7 @@ void CameraBank::openI2C()
       exit(1);
     }
 
-  if(ioctl(m_I2CFD, I2C_SLAVE,0x30) < 0)
+  if(ioctl(m_I2CFD, I2C_SLAVE_FORCE,0x30) < 0)
    {
      printf("Failed to access i2c bus.\n");
      exit(1);
