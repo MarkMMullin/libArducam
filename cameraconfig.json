@@ -15,7 +15,8 @@
     "maxBurstBlockSize" : 4096,
     "cameraTimeoutmSec" : 750,
     "maxFifoReadAttempts" : 5,
-    "acquisitionMode" : 2
+    "acquisitionMode" : 2,
+    "cacheImageBufferSizeInKb" : 256
 }
 
     

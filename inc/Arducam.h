@@ -84,6 +84,8 @@ public:
 	virtual void changeResolution(EResolution newResolution) = 0;
 	// load programming into the sensor registers
 	virtual void programSensor(const struct sensor_reg regList[]) = 0;
+	// set image quantization (quality)
+	virtual void setQuantization(uint8_t value) = 0;
 	// true if the sensors reported type matches the class type (it better!)
 	bool isCorrectSensor();
 	virtual ~Arducam();
@@ -154,6 +156,8 @@ public:
 	inline uint8_t getSensorAddress() {
 		return m_sensor_addr;
 	}
+	
+	static inline uint32_t getImageBufferSize() { return sm_imagebuffer_size;}
 	// utility millisecond delay
 	inline void delayms(uint32_t delay) const {
 		usleep(1000 * delay);
@@ -317,7 +321,8 @@ protected:
 	static uint16_t sm_fifoReadAttempts;
 	static bool sm_isJPEG;
 	static EImageAquisitionMode sm_acquisitionMode;
-	
+	static uint32_t sm_imagebuffer_size;
+
 	// instructions
 	static const int ARDUCHIP_READ_FIFO  = 0x3D;
 	static const int ARDUCHIP_TEST1 = 0x00;  //TEST register

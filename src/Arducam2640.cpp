@@ -1,22 +1,3 @@
-/*
-  This file is part of Abaddon.
-
-    Abaddon is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    Abaddon is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with Foobar.  If not, see <http://www.gnu.org/licenses/>.
-
-    This code is an extreme fork of original code at https://github.com/ArduCAM
-    and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
- */
 #include "Arducam2640.h"
 
 #define LOG_INFO 1
@@ -101,8 +82,6 @@ uint8_t Arducam2640::getLowDeviceIdByte()
      fprintf(stderr,"info:: load resolution specific init\n");
 #endif
      wrSensorRegs8_8(m_resolutionProgram);
-     //wrSensorReg8_8(0xff, 0x00);
-     //wrSensorReg8_8(0x44, 0x32);
    } else
      {
        wrSensorRegs8_8(OV2640_QVGA);
@@ -110,6 +89,11 @@ uint8_t Arducam2640::getLowDeviceIdByte()
 #if LOG_INFO
      fprintf(stderr,"info:: completed program load\n");
 #endif
+}
+void Arducam2640::setQuantization(uint8_t value)
+{
+     wrSensorReg8_8(0xff, 0x00);
+     wrSensorReg8_8(0x44, value);
 }
 void Arducam2640::changeResolution(EResolution newResolution)
 {

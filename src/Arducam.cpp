@@ -44,6 +44,7 @@ uint8_t* Arducam::sm_imageBuffer[2] = {NULL,NULL};
 bool Arducam::sm_isJPEG = true;
 Arducam::EResolution Arducam::sm_resolution;
 Arducam::EImageAquisitionMode Arducam::sm_acquisitionMode;
+uint32_t Arducam::sm_imagebuffer_size;
 Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
   m_cameraBank = theBank;
   m_SPIFD = SPIFD;
@@ -58,9 +59,9 @@ Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
   m_burstReadBuffer = new uint8_t[sm_maxBurstBlockSize + 16];
   m_burstWriteBuffer = new uint8_t[sm_maxBurstBlockSize + 16];
   m_acquisitionMode = sm_acquisitionMode;
-  m_imageBuffer = new uint8_t[390000];
+  m_imageBuffer = new uint8_t[sm_imagebuffer_size];
   m_imageBufferDeposit = 0;
-  m_lastImageBuffer = new uint8_t[390000];
+  m_lastImageBuffer = new uint8_t[sm_imagebuffer_size];
   m_lastImageBufferSize = 0;
   pthread_mutex_init(&m_lastImageBufferMutex, NULL);
 }
@@ -482,8 +483,8 @@ uint8_t Arducam::wrSensorReg8_8(uint8_t regID, uint8_t regDat)
 {
   uint8_t wbuf[2]={regID,regDat}; //first byte is address to write. others are bytes to be written
   write(m_I2CFD, wbuf, 2);
-	      if(regID == 0xFF)
-		delayms(200);
+  if(regID == 0xFF)
+    delayms(200);
   return 1;
 }
 
@@ -503,9 +504,9 @@ int Arducam::wrSensorRegs8_8(const struct sensor_reg reglist[])
 	    {
 	      uint8_t reg = (uint8_t) (reglist[baseIndex].reg & 0xFF);
 	      uint8_t val =  (uint8_t) (reglist[baseIndex].val & 0xFF);
-	       uint8_t wbuf[2]={reg,val}; //first byte is address to write. others are bytes to be written
-	       write(m_I2CFD, wbuf, 2);
-	       //fprintf(stderr,"0x%02x,0x%02x\n",reg , val);
+	      uint8_t wbuf[2]={reg,val}; //first byte is address to write. others are bytes to be written
+	      write(m_I2CFD, wbuf, 2);
+	      //fprintf(stderr,"0x%02x,0x%02x\n",reg , val);
 	      if(reg == 0xFF)
 		delayms(200);
 	    }
@@ -571,36 +572,45 @@ void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
   // Write BUF_SIZE uint8_ts image data to file
   if(CameraManager::sm_recordingOn)
     fwrite(sm_imageBuffer[imageBufferNumber()], sm_imageBufferSize, 1, fp);
-  memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],sm_imageBufferSize);
-  m_imageBufferDeposit += sm_imageBufferSize;
-  m_bufferIndex = 0;
-  sm_imageBuffer[imageBufferNumber()][m_bufferIndex++] = writeByte;
-
-}
-void Arducam::flushImageBuffer(FILE* fp)
-{
-  if(m_bufferIndex > 0)
+  if(m_imageBufferDeposit + m_bufferIndex < sm_imagebuffer_size)
     {
-      if(CameraManager::sm_recordingOn)
-	fwrite(sm_imageBuffer[imageBufferNumber()], m_bufferIndex, 1, fp);
-      memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],m_bufferIndex);
-      m_imageBufferDeposit += m_bufferIndex;
-      m_bufferIndex = 0;
+      memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],sm_imageBufferSize);
+      m_imageBufferDeposit += sm_imageBufferSize;
     }
-  pthread_mutex_lock (&m_lastImageBufferMutex);
-  memcpy(m_lastImageBuffer,m_imageBuffer,m_imageBufferDeposit);
-  m_lastImageBufferSize = m_imageBufferDeposit;
-  pthread_mutex_unlock (&m_lastImageBufferMutex);
-  fprintf(stderr,"copy buffer store size %d\n",m_lastImageBufferSize);
-  m_imageBufferDeposit = 0;
+	m_bufferIndex = 0;
+	sm_imageBuffer[imageBufferNumber()][m_bufferIndex++] = writeByte;
 }
+  void Arducam::flushImageBuffer(FILE* fp)
+  {
+    if(m_bufferIndex > 0)
+      {
+	if(CameraManager::sm_recordingOn)
+	  fwrite(sm_imageBuffer[imageBufferNumber()], m_bufferIndex, 1, fp);
+	if(m_imageBufferDeposit + m_bufferIndex < sm_imagebuffer_size)
+	  {
+	    memcpy(&m_imageBuffer[m_imageBufferDeposit],sm_imageBuffer[imageBufferNumber()],m_bufferIndex);
+	    m_imageBufferDeposit += m_bufferIndex;
+	  }
+	m_bufferIndex = 0;
+      }
+    // don't bother updating if it would overflow the buffer, this is just advisory information anyway
+    if(m_imageBufferDeposit <= sm_imagebuffer_size)
+      {
+	pthread_mutex_lock (&m_lastImageBufferMutex);
+	memcpy(m_lastImageBuffer,m_imageBuffer,m_imageBufferDeposit);
+	m_lastImageBufferSize = m_imageBufferDeposit;
+	pthread_mutex_unlock (&m_lastImageBufferMutex);
+	fprintf(stderr,"copy buffer store size %d\n",m_lastImageBufferSize);
+      }
+    m_imageBufferDeposit = 0;
+  }
 
-uint8_t* Arducam::getLastImageBuffer(uint8_t* copyBuffer,uint32_t& bufferSize)
-{
-  pthread_mutex_lock (&m_lastImageBufferMutex);
-  bufferSize = m_lastImageBufferSize;
-  memcpy(copyBuffer,m_lastImageBuffer,bufferSize);
-  pthread_mutex_unlock (&m_lastImageBufferMutex);
-  fprintf(stderr,"copy buffer FETCH size %d\n",m_lastImageBufferSize);
-  return copyBuffer;
-}
+  uint8_t* Arducam::getLastImageBuffer(uint8_t* copyBuffer,uint32_t& bufferSize)
+  {
+    pthread_mutex_lock (&m_lastImageBufferMutex);
+    bufferSize = m_lastImageBufferSize;
+    memcpy(copyBuffer,m_lastImageBuffer,bufferSize);
+    pthread_mutex_unlock (&m_lastImageBufferMutex);
+    fprintf(stderr,"copy buffer FETCH size %d\n",m_lastImageBufferSize);
+    return copyBuffer;
+  }

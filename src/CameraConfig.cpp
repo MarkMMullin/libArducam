@@ -92,11 +92,16 @@ void CameraConfig::Load(configuru::Config& cfg)
 
   int fifoReadAttempts = (int) cfg["maxFifoReadAttempts"];
   Arducam::sm_fifoReadAttempts = fifoReadAttempts;
+
   
   string resolution = (string) cfg["resolution"];
   Arducam::EResolution res = Arducam::parseResolution(resolution);
   Arducam::setDefaultResolution(res);
   Arducam::initializeBankImageBuffers();
+
+  int cacheImageBufferSize = (int) cfg["cacheImageBufferSizeInKb"];
+  cacheImageBufferSize *= 1024;
+  Arducam::sm_imagebuffer_size = cacheImageBufferSize;
   CameraManager::sm_maxPasses = (int) cfg["maxpasses"];
   CameraManager::sm_timeoutmSecs = (int) cfg["cameraTimeoutmSec"];
   CameraManager::sm_imageDir = (string) cfg["imageDir"];
