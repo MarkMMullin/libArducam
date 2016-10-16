@@ -125,9 +125,17 @@ bool Arducam::powerUp() {
 bool Arducam::reset()
 {
   uint8_t rv = read_reg(ARDUCHIP_GPIO);
-  if(rv == 0xFF)
-    return false;
-
+  int ctr = 1000000;
+  if(CameraNumber() != 47)
+  while(rv == 0xFF && --ctr > 0)
+    {
+      rv = read_reg(ARDUCHIP_GPIO);
+    }
+  if(ctr == 0)
+    {
+      fprintf(stderr,"info: GPIO 0xFF, assumed unreadable\n");
+      return false;
+    }
 #if LOG_INFO
   fprintf(stderr,"info: GPIO = 0x%02x\n",rv);
 #endif
@@ -285,6 +293,9 @@ bool Arducam::burstRead(FILE *fp) {
     pthread_yield();
   if(length == 0) {
     clear_fifo_flag();
+#if LOG_INFO
+  fprintf(stderr,"warn:camera %d returned 0 length image\n",m_cameraNo);
+#endif
     return false;
   }
   m_fifoLength = length;
@@ -600,7 +611,9 @@ void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
 	memcpy(m_lastImageBuffer,m_imageBuffer,m_imageBufferDeposit);
 	m_lastImageBufferSize = m_imageBufferDeposit;
 	pthread_mutex_unlock (&m_lastImageBufferMutex);
-	fprintf(stderr,"copy buffer store size %d\n",m_lastImageBufferSize);
+#if LOG_INFO
+	fprintf(stderr,"Camera %d copy buffer store size %d\n",m_cameraNo,m_lastImageBufferSize);
+#endif
       }
     m_imageBufferDeposit = 0;
   }
@@ -611,6 +624,8 @@ void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
     bufferSize = m_lastImageBufferSize;
     memcpy(copyBuffer,m_lastImageBuffer,bufferSize);
     pthread_mutex_unlock (&m_lastImageBufferMutex);
+#if LOG_INFO
     fprintf(stderr,"copy buffer FETCH size %d\n",m_lastImageBufferSize);
+#endif
     return copyBuffer;
   }

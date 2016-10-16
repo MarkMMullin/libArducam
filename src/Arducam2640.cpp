@@ -135,6 +135,7 @@ bool Arducam2640::setResolution(EResolution resolution) {
   }
   m_resolutionProgram = resolutionProgram;
   m_resolution = resolution;
+  setQuantization(40);
   return true;
 }
 void Arducam2640::programSensor(const struct sensor_reg regList[])

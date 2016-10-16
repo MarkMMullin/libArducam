@@ -1,18 +1,18 @@
 /*
-  This file is part of Abaddon.
+  This file is part of libArduino.
 
-  Abaddon is free software: you can redistribute it and/or modify
+  libArduino is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Abaddon is distributed in the hope that it will be useful,
+  libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Abaddon.  If not, see <http://www.gnu.org/licenses/>.
+  along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
 
   This code is an extreme fork of original code at https://github.com/ArduCAM
   and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
@@ -30,6 +30,7 @@
 
 #include "CameraBank.h"
 
+#define LOG_INFO 1
 int CameraBank::sm_busSpeed = 0;
 CameraBank*CameraBank::sm_banks[2];
 uint8_t CameraBank::sm_gpioPins[4] = {60,49,117,115};
@@ -46,15 +47,14 @@ bool CameraBank::InitializeBanks()
 // This should be called at outermost scope of camera access operation
 void CameraBank::Activate(Arducam* camera)
 {
-#if LOG_INFO
-  fprintf(stderr,"info:activating\n");
-#endif
   int bankIndex = camera->GetCameraBank()->BankNumber();
   int deviceIndex = camera->CameraNumber() % 4;
 
 #if LOG_INFO
-  fprintf(stderr,"info:activating camera %d in bank %d\n",deviceIndex,bankIndex);
+  fprintf(stderr,"info:activating camera %d as device %d in bank %d\n",
+	  camera->CameraNumber(),deviceIndex,bankIndex);
 #endif
+
   // set the gpio pins
   int pinval[4];
   pinval[0] = pinval[1] = pinval[2] = pinval[3] = -1;
@@ -162,4 +162,7 @@ void CameraBank::gpioSet(int gpio, int value)
   sprintf(buf, "%d", value);
   write(fd, buf, 1);
   close(fd);
+#if LOG_INFO
+  fprintf(stderr,"GPIO %d = %d\n",gpio,value);
+#endif
 }
