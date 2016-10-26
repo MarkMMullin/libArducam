@@ -1,6 +1,5 @@
 #include "Arducam2640.h"
 
-#define LOG_INFO 1
 const uint8_t OV2640_CHIPID_HIGH = 0x0A;
 const uint8_t OV2640_CHIPID_LOW =  0x0B;
 
@@ -23,7 +22,10 @@ const uint8_t OV2640_CHIPID_LOW =  0x0B;
 #include "sensor_programs/OV2640_QVGA.regpgm.h"
 #include "sensor_programs/OV2640_YUV422.regpgm.h"
 
-
+Arducam::ECameraType Arducam2640::GetCameraType() const
+{
+  return ECameraType::OV2640;
+}
 
 Arducam2640::Arducam2640(int cameraNumber,CameraBank* cameraBank,int SPIFD,int I2CFD) : Arducam(cameraNumber,cameraBank,SPIFD,I2CFD)
 {

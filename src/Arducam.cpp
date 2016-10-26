@@ -1,18 +1,18 @@
 /*
-  This file is part of Abaddon.
+  This file is part of libArduino.
 
-  Abaddon is free software: you can redistribute it and/or modify
+  libArduino is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Abaddon is distributed in the hope that it will be useful,
+  libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Abaddon.  If not, see <http://www.gnu.org/licenses/>.
+  along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
 
   This code is an extreme fork of original code at https://github.com/ArduCAM
   and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
@@ -35,7 +35,6 @@
 #include "CameraManager.h"
 
 #define DO_GPIO_RESET 0
-#define LOG_INFO 1
 // Arducam::
 uint16_t Arducam::sm_fifoReadAttempts = 2;
 uint16_t Arducam::sm_maxBurstBlockSize = 1024;
@@ -125,7 +124,7 @@ bool Arducam::powerUp() {
 bool Arducam::reset()
 {
   uint8_t rv = read_reg(ARDUCHIP_GPIO);
-  int ctr = 1000000;
+  int ctr = 10000;
   if(CameraNumber() != 47)
   while(rv == 0xFF && --ctr > 0)
     {
@@ -427,6 +426,8 @@ uint8_t Arducam::bus_read(uint8_t address) const
   ret = ioctl(m_SPIFD, SPI_IOC_MESSAGE(1), &tr);
   if (ret < 0)
     fprintf(stderr,"warn:can't read spi message(%d/%x/%c)",errno,errno,errno);
+  // if(GetCameraType()  == ECameraType::OV5642)
+  //   rx[1] = (uint8_t)(rx[1] >> 1) | (rx[1] << 7);
   return rx[1];
 }
 
@@ -472,7 +473,7 @@ uint8_t Arducam::wrSensorReg16_8(uint16_t regID, uint8_t regDat)
   uint8_t reg_H,reg_L;
   reg_H = (regID >> 8) & 0x00ff;
   reg_L = regID & 0x00ff;
-  char wbuf[3]={reg_H,reg_L,regDat}; //first byte is address to write. others are bytes to be written
+  uint8_t wbuf[3]={reg_H,reg_L,regDat}; 
   write(m_I2CFD, wbuf, 3);
   return 1;
 }
@@ -480,13 +481,14 @@ uint8_t Arducam::wrSensorReg16_8(uint16_t regID, uint8_t regDat)
 uint8_t Arducam::rdSensorReg16_8(uint16_t regID, uint8_t* regDat)
 {
   uint8_t reg_H,reg_L;
-  reg_H = (regID >> 8) & 0x00ff;
-  reg_L = regID & 0x00ff;
-  char read_start_buf[2] = {reg_H,reg_L};
-  char rbuf[1];
-  write(m_I2CFD, read_start_buf, 2); //reposition file pointer to register 0x28
+  reg_H = (regID >> 8) & 0xff;
+  reg_L = regID & 0xff;
+  uint8_t read_start_buf[2] = {reg_H,reg_L};
+  uint8_t rbuf[2];
+  write(m_I2CFD, read_start_buf, 2); 
   read(m_I2CFD, rbuf, 1);
   *regDat =rbuf[0];
+  fprintf(stderr,"%04x WHERE MSB=%02x,LSB=%02x = %02x\n",regID,reg_H,reg_L,rbuf[0]);
   return 1;
 }
 
@@ -563,14 +565,12 @@ int Arducam::wrSensorRegs8_16(const struct sensor_reg reglist[])
 
 int Arducam::wrSensorRegs16_8(const struct sensor_reg reglist[])
 {
-  unsigned int reg_addr,reg_val;
   const struct sensor_reg *next = reglist;
-
-  while ((reg_addr != 0xffff) | (reg_val != 0xff))
+  // excess parens per request of the compiler
+  while ((next->reg != 0xffff) | (next->val != 0xff))
     {
-      reg_addr = pgm_read_word(&next->reg);
-      reg_val = pgm_read_word(&next->val);
-      wrSensorReg16_8(reg_addr, reg_val);
+      //fprintf(stderr,"WRITE:  %04x = %02x\n",next->reg,next->val);
+      wrSensorReg16_8(next->reg, next->val);
       next++;
     }
 

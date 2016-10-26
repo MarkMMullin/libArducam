@@ -30,14 +30,15 @@
 
 #include "CameraBank.h"
 
-#define LOG_INFO 1
 int CameraBank::sm_busSpeed = 0;
+Arducam::ECameraType CameraBank::sm_cameraType[8];
 CameraBank*CameraBank::sm_banks[2];
 uint8_t CameraBank::sm_gpioPins[4] = {60,49,117,115};
 uint8_t CameraBank::sm_bank0SPI = 0;
 uint8_t CameraBank::sm_bank0I2C = 0;
 uint8_t CameraBank::sm_bank1SPI = 0;
 uint8_t CameraBank::sm_bank1I2C = 0;
+uint8_t CameraBank::sm_common_device_address = 0;
 bool CameraBank::InitializeBanks()
 {
   for(int i = 0; i < 2;i++)
@@ -115,8 +116,8 @@ void CameraBank::openI2C()
       perror("Failed to open i2c device.\n");
       exit(1);
     }
-
-  if(ioctl(m_I2CFD, I2C_SLAVE_FORCE,0x30) < 0)
+ 
+  if(ioctl(m_I2CFD, I2C_SLAVE_FORCE,sm_common_device_address) < 0) // original value = 0x30
    {
      printf("Failed to access i2c bus.\n");
      exit(1);

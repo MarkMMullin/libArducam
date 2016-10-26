@@ -1,18 +1,18 @@
 /*
-  This file is part of Abaddon.
+  This file is part of libArduino.
 
-  Abaddon is free software: you can redistribute it and/or modify
+  libArduino is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Abaddon is distributed in the hope that it will be useful,
+  libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Abaddon.  If not, see <http://www.gnu.org/licenses/>.
+  along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
 
   This code is an extreme fork of original code at https://github.com/ArduCAM
   and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
@@ -20,6 +20,7 @@
 #include "Arducam.h"
 class CameraBank
 {
+  
   friend class CameraConfig;
  public:
   static bool InitializeBanks();
@@ -37,6 +38,8 @@ class CameraBank
    inline void SetSPISpeed(uint32_t mode) { m_SPISpeed = mode; }
   inline uint16_t GetSPIDelay() { return m_SPIDelay; }
    inline void SetSPIDelay(uint8_t mode) { m_SPIDelay = mode; }
+   inline static Arducam::ECameraType GetCameraType(int bnk,int idx)  { return CameraBank::sm_cameraType[(bnk*4)+ idx]; }
+   inline static void SetCameraType(int bnk,int idx,Arducam::ECameraType tp) { CameraBank::sm_cameraType[(bnk*4)+ idx] = tp; }
  private:
    CameraBank(int bankNumber);
    // open the SPI file stream for access
@@ -65,7 +68,7 @@ class CameraBank
   int m_I2CFD;
   //  SPI bus file descriptor
   int m_SPIFD;
-
+  static Arducam::ECameraType sm_cameraType[8];
   static CameraBank* sm_banks[2];
   static uint8_t sm_gpioPins[4];
   static int sm_busSpeed;
@@ -73,5 +76,6 @@ class CameraBank
   static uint8_t sm_bank0I2C;
   static uint8_t sm_bank1SPI;
   static uint8_t sm_bank1I2C;
+  static uint8_t sm_common_device_address;
   static const int WORD_SIZE = 8;
 };

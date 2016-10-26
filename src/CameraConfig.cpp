@@ -1,18 +1,18 @@
 /*
-  This file is part of Abaddon.
+  This file is part of libArduino.
 
-  Abaddon is free software: you can redistribute it and/or modify
+  libArduino is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Abaddon is distributed in the hope that it will be useful,
+  libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Abaddon.  If not, see <http://www.gnu.org/licenses/>.
+  along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
 
   This code is an extreme fork of original code at https://github.com/ArduCAM
   and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
@@ -63,7 +63,7 @@ vector<string> split(const string &s, char delim) {
 		R1280x1024 = 8,
 		R1600x1200 = 9
 */
-
+ 
 void CameraConfig::Load(configuru::Config& cfg)
 {
   
@@ -81,6 +81,9 @@ void CameraConfig::Load(configuru::Config& cfg)
   CameraBank::sm_bank0I2C = (uint8_t) ((int) cfg["bank0-i2c"]);
   CameraBank::sm_bank1SPI = (uint8_t) ((int) cfg["bank1-spi"]);
   CameraBank::sm_bank1I2C = (uint8_t) ((int) cfg["bank1-i2c"]);
+  string addrstr = (string) cfg["sensor-address"];
+  int x = strtol(addrstr.c_str(), NULL, 16);
+  CameraBank::sm_common_device_address = x;
   string gpioPins = (string) cfg["camSelectGPIO"];
   vector<string> pins = vector<string>();
   split(gpioPins,',',pins);
@@ -107,6 +110,39 @@ void CameraConfig::Load(configuru::Config& cfg)
   CameraManager::sm_imageDir = (string) cfg["imageDir"];
   CameraManager::sm_recordingOn = (int) cfg["recordingOn"] != 0;
   string ac = (string) cfg["cameramask"];
-  int x = strtol(ac.c_str(), NULL, 16);
-  CameraManager::sm_activeCameras = x;
+  processCameraConfig(ac);
+}
+
+void CameraConfig::processCameraConfig(const std::string& cfg)
+{
+  std::string::size_type limit = cfg.length();
+  std::string::size_type index = -0;
+  for(std::string::size_type i = 0; i < limit; i++)
+    {
+      char c = cfg[i];
+      //for(char c : cfg)
+      // {
+      int cam = index % 4;
+      int bank = index / 4;
+      switch(c)
+	{
+	case CC_OV2640:
+	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV2640);
+	  break;
+	case CC_OV5642:
+	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV5642);
+	  break;
+	case CC_OV5640:
+	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV5640);
+	  break;
+	case CC_BANKEND:
+	  // ignore it - just to make the format string more readable
+	  --index;
+	  break;
+        default:
+	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::NONE);
+	  break;
+	}
+      ++index;
+    }
 }

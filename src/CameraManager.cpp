@@ -1,18 +1,18 @@
 /*
-  This file is part of Abaddon.
+  This file is part of libArduino.
 
-  Abaddon is free software: you can redistribute it and/or modify
+  libArduino is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
 
-  Abaddon is distributed in the hope that it will be useful,
+  libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
 
   You should have received a copy of the GNU General Public License
-  along with Abaddon.  If not, see <http://www.gnu.org/licenses/>.
+  along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
 
   This code is an extreme fork of original code at https://github.com/ArduCAM
   and all changes are Copyright 2016 Mark M. Mullin (mark.m.mullin@gmail.com)
@@ -35,11 +35,12 @@
 #include "CameraManager.h"
 // include specific arducam classes being instantiated
 #include "Arducam2640.h"
+#include "Arducam5642.h"
+#include "Arducam5640.h"
 
 
 CameraManager* CameraManager::m_singleton = NULL;
 int CameraManager::sm_timeoutmSecs = 0;
-int CameraManager::sm_activeCameras = 0;
 int CameraManager::sm_maxPasses = 0;
 bool CameraManager::sm_recordingOn = 0;
 std::string CameraManager::sm_imageDir;
@@ -181,7 +182,11 @@ void CameraManager::allocateCameras()
   int mask = 1;
   for(int i = 0;i < 8;i++)
     {
-      if((mask & sm_activeCameras) == 0) {
+      
+      int cameraBank = i / 4;
+      int cameraIndex = i % 4;
+     Arducam::ECameraType camType = CameraBank::GetCameraType(cameraBank,cameraIndex);
+     if(camType == Arducam::ECameraType::NONE) {
 	mask = mask * 2;
 	m_cameras[i] = NULL;
 	continue;
@@ -190,7 +195,6 @@ void CameraManager::allocateCameras()
 #if LOG_INFO
       fprintf(stderr,"info:testing camera %d\n",i);
 #endif
-      int cameraBank = i / 4;
       // Allocating camera i,cameraBank,cameraIndex
       CameraBank* camBank = CameraBank::GetBank(cameraBank);
       
@@ -199,7 +203,22 @@ void CameraManager::allocateCameras()
 #if LOG_INFO
       fprintf(stderr,"info:camera bank %d spi %d i2c %d\n",cameraBank,spifd,i2cfd);
 #endif
-      Arducam* newCam = new Arducam2640(i,camBank,spifd,i2cfd);
+      Arducam* newCam;
+      switch(camType)
+	{
+	case Arducam::ECameraType::OV2640:
+	  newCam = new Arducam2640(i,camBank,spifd,i2cfd);
+	  break;
+	case Arducam::ECameraType::OV5642:
+	  newCam = new Arducam5642(i,camBank,spifd,i2cfd);
+	  break;
+	case Arducam::ECameraType::OV5640:
+	  newCam = new Arducam5640(i,camBank,spifd,i2cfd);
+	  break;
+	case Arducam::ECameraType::NONE:
+	  newCam = NULL;
+	  break;
+	}
       try {
 	// need the correct CS lines illuminated to talk to the camera
 	camBank->Activate(newCam);
@@ -226,6 +245,9 @@ void CameraManager::allocateCameras()
 	  delete newCam;
 	m_cameras[i] = NULL;
       }
+#if LOG_INFO
+      fprintf(stderr,"info:camera %d %s\n",i,m_cameras[i] != NULL ? "ONLINE" : "OFFLINE");
+#endif
     }
 }
 
