@@ -112,6 +112,9 @@ class Arducam {
   // make an image capture request
   void capture();
   // true as long as image is actively being captured
+  // external agents must increment the shot counter because the cameras opinion doesn't matter
+  void incrementShotCounter() { m_shotCounter++;}
+  uint32_t getShotCounter() const { return m_shotCounter;}
   inline bool isCapturing() {
     if(!m_isCapturing) return false;
 
@@ -142,7 +145,7 @@ class Arducam {
       result = burstRead(fp);
       break;
     }
-    clear_fifo_flag();
+    flush_fifo();
     return result;
   }
   // return the last image the camera obtained - used to ameliorate races
@@ -225,10 +228,7 @@ class Arducam {
   void bus_write(uint8_t address, uint8_t value) const;
   uint8_t bus_read(uint8_t address) const;
   uint8_t continue_bus_read();
-  // low level wiring interface
-  inline void clear_fifo_flag(void) {
-    write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
-  };
+
 
   inline uint32_t read_fifo_length() {
     uint32_t len1,len2,len3,length=0;
@@ -242,7 +242,7 @@ class Arducam {
     return bus_read(ARDUCHIP_READ_FIFO);
   }
   inline void flush_fifo(void) {
-    write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK);
+    write_reg(ARDUCHIP_FIFO, FIFO_CLEAR_MASK | FIFO_RDPTR_RST_MASK | FIFO_WRPTR_RST_MASK );
   }
 
   inline void start_capture(void) {
@@ -300,6 +300,8 @@ class Arducam {
   EImageAquisitionMode m_acquisitionMode;
   // true iff the camera has successfully completed an initialization sequence
   bool m_isInitialized;
+  // counts the shots accepted from this camera
+  uint32_t m_shotCounter;
   // true while an active capture operation is ongoing
   bool m_isCapturing;
   // length of inbound FIFO from Arducam

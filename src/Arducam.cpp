@@ -50,6 +50,7 @@ Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
   m_I2CFD = I2CFD;
 
   m_cameraNo = cameraNumber;
+  m_shotCounter = 0;
 
   m_isInitialized = false;
   m_isCapturing = false;
@@ -161,8 +162,7 @@ bool Arducam::reset()
 void Arducam::capture() {
   // Flush the FIFO
   flush_fifo();
-  // Clear the capture done flag
-  clear_fifo_flag();
+  flush_fifo();
   start_capture();
 }
 
@@ -176,7 +176,7 @@ bool Arducam::serialRead(FILE *fp) {
   while(attempts-- > 0 && ((length = read_fifo_length()) == 0))
     pthread_yield();
   if(length == 0) {
-    clear_fifo_flag();
+    flush_fifo();
     return false;
   }
 #if LOG_INFO
@@ -285,17 +285,20 @@ uint8_t Arducam::burstReadByte(int remaining)
 
 
 bool Arducam::burstRead(FILE *fp) {
+  bool isUnknownLength = false;
   uint32_t length=0;
   int attempts = sm_fifoReadAttempts;
   // test ordering is deliberate in order to allow fifo read attempts of zero to cause continous failure
   while(attempts-- > 0 && ((length = read_fifo_length()) == 0))
-    pthread_yield();
+    delayms(100);
+
   if(length == 0) {
-    clear_fifo_flag();
 #if LOG_INFO
-  fprintf(stderr,"warn:camera %d returned 0 length image\n",m_cameraNo);
+    fprintf(stderr,"warn:camera %d returned 0 length image\n",m_cameraNo);
 #endif
     return false;
+    //length = 99999999;
+    //isUnknownLength = true;
   }
   m_fifoLength = length;
   // force a leading data capture
@@ -325,12 +328,16 @@ bool Arducam::burstRead(FILE *fp) {
 
   while(length-- > 0)
     {
-      if(isImageData)
-	writeImageByte(burstReadByte(length),fp);
-      else {
+      
 	temp_last = temp;
 
 	temp = burstReadByte(length);
+	
+	if(isImageData) {
+	  writeImageByte(temp,fp);
+	  if(isUnknownLength && temp == 0xD9 && temp_last == 0xFF)
+	    length = 0;
+      } else {
 	if((temp == 0xD8) & (temp_last == 0xFF))
 	  {
 	    // image has started, write the segment marker to the file
@@ -471,8 +478,8 @@ uint8_t Arducam::rdSensorReg8_16(uint8_t regID, uint16_t* regDat)
 uint8_t Arducam::wrSensorReg16_8(uint16_t regID, uint8_t regDat)
 {
   uint8_t reg_H,reg_L;
-  reg_H = (regID >> 8) & 0x00ff;
-  reg_L = regID & 0x00ff;
+  reg_H = (regID >> 8) & 0xff;
+  reg_L = regID & 0xff;
   uint8_t wbuf[3]={reg_H,reg_L,regDat}; 
   write(m_I2CFD, wbuf, 3);
   return 1;
@@ -567,7 +574,7 @@ int Arducam::wrSensorRegs16_8(const struct sensor_reg reglist[])
 {
   const struct sensor_reg *next = reglist;
   // excess parens per request of the compiler
-  while ((next->reg != 0xffff) | (next->val != 0xff))
+  while ((next->reg != 0xffff) && (next->val != 0xff))
     {
       //fprintf(stderr,"WRITE:  %04x = %02x\n",next->reg,next->val);
       wrSensorReg16_8(next->reg, next->val);

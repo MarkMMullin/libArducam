@@ -9,7 +9,7 @@
   libArduino is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  GNU General Pubrelic License for more details.
 
   You should have received a copy of the GNU General Public License
   along with libArduino.  If not, see <http://www.gnu.org/licenses/>.
@@ -49,9 +49,11 @@ timeval sLastReportTime;
 const int BUNDLECAPACITY = 5000;
 CameraManager::CameraManager()
 {
-
-  m_bundleNumber = countOutputDirectories();
-  createBundle();
+  if(sm_recordingOn)
+    {
+      m_bundleNumber = countOutputDirectories();
+      createBundle();
+    }
   for(int i = 0;i < 8;i++)
     {
       m_fails[i] = 0;
@@ -122,14 +124,20 @@ void bankImageCaptureDriver(int highBankFlag)
 	  
 	pthread_yield();
       }
-      if(!failed) 
-	failed = !cm->saveCamera(bankAddress);
-
+      if(!failed)
+	{
+	  failed = !cm->saveCamera(bankAddress);
+	  if(!failed)
+	    theCam->incrementShotCounter();
+	}
       cm->m_reads[bankAddress]++;
       if(failed)
-	cm->m_fails[bankAddress]++;
-	
-
+	{
+	  cm->m_fails[bankAddress]++;
+#if LOG_INFO
+	  fprintf(stderr,"error: capture failed on %d\n",camIndex);
+#endif
+	}
       pthread_yield();
       // update sample time stats
       timeval currentTime;
