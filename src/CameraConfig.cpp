@@ -100,6 +100,8 @@ void CameraConfig::Load(configuru::Config& cfg)
   string resolution = (string) cfg["resolution"];
   Arducam::EResolution res = Arducam::parseResolution(resolution);
   Arducam::setDefaultResolution(res);
+  int defaultQuantization = (int) cfg["quantization"];
+  Arducam::setDefaultQuantization(defaultQuantization);
   Arducam::initializeBankImageBuffers();
 
   int cacheImageBufferSize = (int) cfg["cacheImageBufferSizeInKb"];
@@ -110,37 +112,49 @@ void CameraConfig::Load(configuru::Config& cfg)
   CameraManager::sm_imageDir = (string) cfg["imageDir"];
   CameraManager::sm_recordingOn = (int) cfg["recordingOn"] != 0;
   string ac = (string) cfg["cameramask"];
-  processCameraConfig(ac);
+  string am = (string) cfg["cameratranslation"];
+  processCameraConfig(ac,am);
 }
 
-void CameraConfig::processCameraConfig(const std::string& cfg)
+void CameraConfig::processCameraConfig(const std::string& cfg,const std::string& map)
 {
   std::string::size_type limit = cfg.length();
-  std::string::size_type index = -0;
+  std::string::size_type index = 0;
   for(std::string::size_type i = 0; i < limit; i++)
     {
       char c = cfg[i];
+      char m = map[i] - '0';
       //for(char c : cfg)
       // {
-      int cam = index % 4;
-      int bank = index / 4;
+      int cam = m % 4;
+      int bank = m / 4;
       switch(c)
 	{
 	case CC_OV2640:
 	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV2640);
+	  CameraManager::sm_indexmap[index] = m;
+#if LOG_INFO
+	  fprintf(stderr,"config,camera,virtualize, physical,%d,virtual,%d\n",index,m);
+#endif
 	  break;
 	case CC_OV5642:
 	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV5642);
+	  CameraManager::sm_indexmap[index] = m;
 	  break;
 	case CC_OV5640:
 	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::OV5640);
+	  CameraManager::sm_indexmap[index] = m;
 	  break;
 	case CC_BANKEND:
 	  // ignore it - just to make the format string more readable
 	  --index;
 	  break;
         default:
+#if LOG_INFO
+	  fprintf(stderr,"config,disabled camera %d\n",index);
+#endif
 	  CameraBank::SetCameraType(bank,cam,Arducam::ECameraType::NONE);
+	  CameraManager::sm_indexmap[index] = 255;
 	  break;
 	}
       ++index;

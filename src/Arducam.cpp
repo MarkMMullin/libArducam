@@ -35,6 +35,7 @@
 #include "CameraManager.h"
 
 #define DO_GPIO_RESET 0
+#define LOG_INFO 1
 // Arducam::
 uint16_t Arducam::sm_fifoReadAttempts = 2;
 uint16_t Arducam::sm_maxBurstBlockSize = 1024;
@@ -42,6 +43,8 @@ uint32_t Arducam::sm_imageBufferSize = 2 * 1024; //@config[imageBufferSize] - nu
 uint8_t* Arducam::sm_imageBuffer[2] = {NULL,NULL};
 bool Arducam::sm_isJPEG = true;
 Arducam::EResolution Arducam::sm_resolution;
+int Arducam::sm_quantization;
+
 Arducam::EImageAquisitionMode Arducam::sm_acquisitionMode;
 uint32_t Arducam::sm_imagebuffer_size;
 Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
@@ -64,6 +67,7 @@ Arducam::Arducam(int cameraNumber,CameraBank* theBank,int SPIFD,int I2CFD) {
   m_lastImageBuffer = new uint8_t[sm_imagebuffer_size];
   m_lastImageBufferSize = 0;
   pthread_mutex_init(&m_lastImageBufferMutex, NULL);
+  pthread_cond_init(&m_imageUpdateConditionVariable,NULL);
 }
 
 Arducam::~Arducam() {
@@ -78,42 +82,42 @@ bool Arducam::isCorrectSensor()
 
 bool Arducam::powerUp() {
 #if LOG_INFO
-  fprintf(stderr,"info:start powerup camera %d\n",m_cameraNo);
+  fprintf(stderr,"info,camera,%d,start powerup\n",m_cameraNo);
 #endif
   // if you can't reset it you can't use it
   if(!reset()) {
-    fprintf(stderr,"warning:powerup reset failed on camera %d\n",m_cameraNo);
+    fprintf(stderr,"warning,camera,%d,powerup reset failed\n",m_cameraNo);
     return false;
   }
 #if LOG_INFO
-  fprintf(stderr,"info:powerup reset complete on camera %d\n",m_cameraNo);
+  fprintf(stderr,"info,camera,%d,powerup reset complete\n",m_cameraNo);
 #endif
   // if the SPI isn't working you can't use it
   if(!testSPIBus(5))
     {
-      fprintf(stderr,"warning:powerup spi check failed on camera %d\n",m_cameraNo);
+      fprintf(stderr,"warning,camera,%dpowerup spi check failed\n",m_cameraNo);
       return false;
     }
   
   // Change MCU mode
   write_reg(ARDUCHIP_MODE, MCU2LCD_MODE);
 #if LOG_INFO
-  fprintf(stderr,"info:powerup spi check complete on camera %d\n",m_cameraNo);
+  fprintf(stderr,"info,camera,%d,powerup spi check complete\n",m_cameraNo);
   uint8_t arduchipRev = read_reg(ARDUCHIP_REV);
   uint8_t vLow = arduchipRev & VER_LOW_MASK;
   uint8_t vHigh = (arduchipRev & VER_HIGH_MASK) >>6;
-  fprintf(stderr,"info:device: arduchip rev %d.%d (%02x)\n",vHigh,vLow,arduchipRev);
+  fprintf(stderr,"info,device, arduchip, rev %d.%d (%02x)\n",vHigh,vLow,arduchipRev);
 #endif
   
   // Check if the camera device id is correct (as realized in concrete subclass) or you can't use it
   if(!isCorrectSensor()) {
     uint8_t hb = getHighDeviceIdByte();
     uint8_t lb = getLowDeviceIdByte();
-    fprintf(stderr,"warning:powerup i2c sensor version check failed on camera %d with hi = %02x,low = %02x\n",m_cameraNo,hb,lb);
+    fprintf(stderr,"warning,:camera,%d,overlooked,powerup i2c sensor version check failed  with hi = %02x,low = %02x\n",m_cameraNo,hb,lb);
     //return false;
   }
 #if LOG_INFO
-  fprintf(stderr,"info:powerup i2c sensor version check complete on camera %d\n",m_cameraNo);
+  fprintf(stderr,"info,camera,%d,powerup i2c sensor version check complete\n",m_cameraNo);
 #endif
   // sensor initialization
   initializeSensor();
@@ -133,11 +137,11 @@ bool Arducam::reset()
     }
   if(ctr == 0)
     {
-      fprintf(stderr,"info: GPIO 0xFF, assumed unreadable\n");
+      fprintf(stderr,"info, GPIO,value 0xFF, assumed unreadable\n");
       return false;
     }
 #if LOG_INFO
-  fprintf(stderr,"info: GPIO = 0x%02x\n",rv);
+  fprintf(stderr,"info, GPIO,read 0x%02x\n",rv);
 #endif
 #if DO_GPIO_RESET	  
   write_reg(ARDUCHIP_GPIO,0x0);
@@ -161,7 +165,7 @@ bool Arducam::reset()
 }
 void Arducam::capture() {
   // Flush the FIFO
-  flush_fifo();
+  //flush_fifo();
   flush_fifo();
   start_capture();
 }
@@ -180,7 +184,7 @@ bool Arducam::serialRead(FILE *fp) {
     return false;
   }
 #if LOG_INFO
-  fprintf(stderr,"info: image size = %d\n",length);
+  fprintf(stderr,"info,image, size,%d\n",length);
 #endif
   //uint8_t* buffer = sm_imageBuffer[imageBufferNumber()];
   uint8_t buffer[555555];
@@ -294,7 +298,7 @@ bool Arducam::burstRead(FILE *fp) {
 
   if(length == 0) {
 #if LOG_INFO
-    fprintf(stderr,"warn:camera %d returned 0 length image\n",m_cameraNo);
+    fprintf(stderr,"warn,camera, %d, returned 0 length image\n",m_cameraNo);
 #endif
     return false;
     //length = 99999999;
@@ -392,7 +396,7 @@ void Arducam::bus_write(uint8_t address, uint8_t value) const
   tr.pad = 0;
   ret = ioctl(m_SPIFD, SPI_IOC_MESSAGE(1), &tr);
   if (ret < 0)
-    printf("can't send spi combined addr/value message (%d/%x)",errno,errno);
+    fprintf(stderr,"warn,SPI,can't send spi combined addr/value message (%d/%x)",errno,errno);
 }
 
 uint8_t Arducam::bus_write(uint8_t address)
@@ -412,7 +416,7 @@ uint8_t Arducam::bus_write(uint8_t address)
   tr.cs_change = 1;
   int ret = ioctl(m_SPIFD, SPI_IOC_MESSAGE(1), &tr);
   if (ret < 0)
-    printf("warn:can't send spi addr message (%d/%x)",errno,errno);
+    fprintf(stderr,"warn,SPI,can't send spi addr message (%d/%x)",errno,errno);
   return rx[0];
 }
 
@@ -432,7 +436,7 @@ uint8_t Arducam::bus_read(uint8_t address) const
   tr.pad = 0;	
   ret = ioctl(m_SPIFD, SPI_IOC_MESSAGE(1), &tr);
   if (ret < 0)
-    fprintf(stderr,"warn:can't read spi message(%d/%x/%c)",errno,errno,errno);
+    fprintf(stderr,"warn,SPI,can't read spi message(%d/%x/%c)",errno,errno,errno);
   // if(GetCameraType()  == ECameraType::OV5642)
   //   rx[1] = (uint8_t)(rx[1] >> 1) | (rx[1] << 7);
   return rx[1];
@@ -495,7 +499,7 @@ uint8_t Arducam::rdSensorReg16_8(uint16_t regID, uint8_t* regDat)
   write(m_I2CFD, read_start_buf, 2); 
   read(m_I2CFD, rbuf, 1);
   *regDat =rbuf[0];
-  fprintf(stderr,"%04x WHERE MSB=%02x,LSB=%02x = %02x\n",regID,reg_H,reg_L,rbuf[0]);
+  //fprintf(stderr,"%04x WHERE MSB=%02x,LSB=%02x = %02x\n",regID,reg_H,reg_L,rbuf[0]);
   return 1;
 }
 
@@ -503,6 +507,7 @@ uint8_t Arducam::wrSensorReg8_8(uint8_t regID, uint8_t regDat)
 {
   uint8_t wbuf[2]={regID,regDat}; //first byte is address to write. others are bytes to be written
   write(m_I2CFD, wbuf, 2);
+  //fprintf(stderr,"WRITE %02x to %02x\n",regDat,regID);
   if(regID == 0xFF)
     delayms(200);
   return 1;
@@ -532,6 +537,7 @@ int Arducam::wrSensorRegs8_8(const struct sensor_reg reglist[])
 	    }
 	  else
 	    {
+	      //fprintf(stderr,"nope");
 	      std::vector<uint8_t> regseq;
 	      uint16_t numWriteBytes = 1 + (testIndex - baseIndex);
 	      regseq.reserve(numWriteBytes);
@@ -619,8 +625,10 @@ void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
 	m_lastImageBufferSize = m_imageBufferDeposit;
 	pthread_mutex_unlock (&m_lastImageBufferMutex);
 #if LOG_INFO
-	fprintf(stderr,"Camera %d copy buffer store size %d\n",m_cameraNo,m_lastImageBufferSize);
+	fprintf(stderr,"info,Camera,%d,copy buffer store size, %d\n",m_cameraNo,m_lastImageBufferSize);
 #endif
+	// let everyone whos waiting know to grab the new image
+	pthread_cond_broadcast(&m_imageUpdateConditionVariable);
       }
     m_imageBufferDeposit = 0;
   }
@@ -632,7 +640,21 @@ void Arducam::writeInterimImageBytes(uint8_t writeByte,FILE* fp)
     memcpy(copyBuffer,m_lastImageBuffer,bufferSize);
     pthread_mutex_unlock (&m_lastImageBufferMutex);
 #if LOG_INFO
-    fprintf(stderr,"copy buffer FETCH size %d\n",m_lastImageBufferSize);
+    fprintf(stderr,"info,camera,%d,copy buffer FETCH size,%d\n",m_cameraNo,m_lastImageBufferSize);
 #endif
     return copyBuffer;
   }
+
+short Arducam::isCapturing()
+{
+    if(!m_isCapturing) return false;
+    uint8_t rdval = read_reg(ARDUCHIP_TRIG);
+    //fprintf(stderr,"trigger = %02x\n",rdval);
+    if((rdval & 0xF0) != 0 || rdval == 0)
+      {
+	m_isCapturing = false;
+	return -1;
+      }
+    m_isCapturing = !(rdval & CAP_DONE_MASK);
+    return m_isCapturing ? 0 : 1;  
+}

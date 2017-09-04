@@ -44,6 +44,7 @@ int CameraManager::sm_timeoutmSecs = 0;
 int CameraManager::sm_maxPasses = 0;
 bool CameraManager::sm_recordingOn = 0;
 std::string CameraManager::sm_imageDir;
+int CameraManager::sm_indexmap[8] = {255,255,255,255,255,255,255,255};
 timeval sLastReportTime;
 
 const int BUNDLECAPACITY = 5000;
@@ -73,6 +74,8 @@ CameraManager* CameraManager::GetSingleton()
     if(!CameraBank::InitializeBanks())
       return NULL;
     m_singleton->allocateCameras();
+    CameraBank::GetBank(0)->SetSPISpeed(CameraBank::GetBank(0)->GetSPISpeed() * 2);
+    CameraBank::GetBank(1)->SetSPISpeed(CameraBank::GetBank(1)->GetSPISpeed() * 2);
   }
   return m_singleton;
 }
@@ -87,56 +90,71 @@ void bankImageCaptureDriver(int highBankFlag)
   CameraBank* camBank = CameraBank::GetBank(highBank ? 1 : 0);
   int passCount = 0;
   while(!cm->m_kill) {
+    struct timespec tim, tim2;
     try {
       camIndex = (camIndex + 1) % 4;
       int bankAddress = bankOffset + camIndex;
 
       Arducam* theCam = cm->getCamera(bankAddress);
       if(theCam == NULL) {
-	struct timespec tim, tim2;
-	tim.tv_sec = 0;
-	tim.tv_nsec = 250000000L;
-	nanosleep(&tim , &tim2);
+	//tim.tv_sec = 0;
+	//tim.tv_nsec = 250000000L;
+	//nanosleep(&tim , &tim2);
 	continue;
       }
 
-  
+      int retries = 20;
+    retryFail2:      
       camBank->Activate(theCam);
-      timeval endTime;
-      long seconds, useconds;
-
+      //tim.tv_sec = 0;
+      //tim.tv_nsec = 250000000L;
+      //nanosleep(&tim , &tim2);
+	
+       int failType = 0;
       gettimeofday(&cm->m_lastSampleTime[bankAddress],NULL);
+      theCam->waitOnVSync();
       theCam->capture();
-      theCam->delayms(100);
+      theCam->delayms(75);
       bool failed = false;
-      while(theCam->isCapturing()) {
-	theCam->delayms(100);
-	gettimeofday(&endTime, NULL);
-	seconds  = endTime.tv_sec  - cm->m_lastSampleTime[bankAddress].tv_sec;
-	useconds = endTime.tv_usec - cm->m_lastSampleTime[bankAddress].tv_usec;
-	long mtime = ((seconds) * 1000 + useconds/1000.0) + 0.5;
-	if(mtime > CameraManager::sm_timeoutmSecs)
+      int msd = CameraManager::sm_timeoutmSecs;
+      int captureState;
+      while((captureState = theCam->isCapturing()) == 0) {
+	theCam->delayms(10);
+	msd -= 100;
+	if(msd < 0)
 	  {
 	    cm->m_timeouts[bankAddress]++;
 	    failed = true;
+	    failType = 1;
 	    break;
 	  }
 	  
 	pthread_yield();
       }
+      if(captureState == -1)
+	{
+	  failed = true;
+	  failType = 2;
+	}
       if(!failed)
 	{
 	  failed = !cm->saveCamera(bankAddress);
 	  if(!failed)
 	    theCam->incrementShotCounter();
+	  else
+	    failType = 3;
 	}
       cm->m_reads[bankAddress]++;
       if(failed)
 	{
 	  cm->m_fails[bankAddress]++;
 #if LOG_INFO
-	  fprintf(stderr,"error: capture failed on %d\n",camIndex);
+	  fprintf(stderr,"FAIL,camera,%d,failmode,%d\n",camIndex,failType);
 #endif
+	  //if(failType == 2) {
+	  if(--retries > 0)
+	    goto retryFail2;
+	    //}
 	}
       pthread_yield();
       // update sample time stats
@@ -152,10 +170,10 @@ void bankImageCaptureDriver(int highBankFlag)
     }
     catch(...)
       {
-	fprintf(stderr,"error:exception quashed\n");
+	fprintf(stderr,"error,exception quashed\n");
       }
   }
-  fprintf(stderr,"Camera %d in bank %d EXITED\n",camIndex,bankIndex);
+  fprintf(stderr,"state,Camera,%d,bank, %d, EXITED\n",camIndex,bankIndex);
   pthread_exit(NULL);
 }
 
@@ -201,7 +219,7 @@ void CameraManager::allocateCameras()
       }
       mask = mask * 2;
 #if LOG_INFO
-      fprintf(stderr,"info:testing camera %d\n",i);
+      fprintf(stderr,"info,camera,%d,testing\n",i);
 #endif
       // Allocating camera i,cameraBank,cameraIndex
       CameraBank* camBank = CameraBank::GetBank(cameraBank);
@@ -209,7 +227,7 @@ void CameraManager::allocateCameras()
       int spifd = camBank->GetSPIFD();
       int i2cfd = camBank->GetI2CFD();
 #if LOG_INFO
-      fprintf(stderr,"info:camera bank %d spi %d i2c %d\n",cameraBank,spifd,i2cfd);
+      fprintf(stderr,"info,camera,%d, bank,%d,spi,%d,i2c,%d\n",i,cameraBank,spifd,i2cfd);
 #endif
       Arducam* newCam;
       switch(camType)
@@ -237,7 +255,7 @@ void CameraManager::allocateCameras()
         
 #if LOG_INFO
         if(newCam->powerUp())
-	  fprintf(stderr,"info:created camera %d\n",i);
+	  fprintf(stderr,"info,camera,%d,created\n",i);
 #else
         newCam->powerUp();
 #endif
@@ -254,7 +272,7 @@ void CameraManager::allocateCameras()
 	m_cameras[i] = NULL;
       }
 #if LOG_INFO
-      fprintf(stderr,"info:camera %d %s\n",i,m_cameras[i] != NULL ? "ONLINE" : "OFFLINE");
+      fprintf(stderr,"state,camera,%d,%s\n",i,m_cameras[i] != NULL ? "ONLINE" : "OFFLINE");
 #endif
     }
 }
@@ -286,7 +304,7 @@ bool CameraManager::saveCamera(int cameraNumber) {
 	  fp = fopen(filename.c_str(), "w");
 	  if(!fp)
 	    {
-	      fprintf(stderr,"filesystem stuttering\n");
+	      fprintf(stderr,"warning,filesystem,stuttering\n");
 	      --retries;
 	      filename = createFilename(cameraNumber);
 	      
@@ -294,7 +312,7 @@ bool CameraManager::saveCamera(int cameraNumber) {
 	}
   
       if (!fp) {
-	printf("Error: could not open %s\n", filename.c_str());
+	fprintf(stderr,"Error,file,%s, could not open\n", filename.c_str());
 	return false;
       }
     }
@@ -337,7 +355,7 @@ int CameraManager::countOutputDirectories()
   DIR *fd;
 
   if ((fd = opendir(CameraManager::sm_imageDir.c_str())) == NULL) {
-    fprintf(stderr, "listdir: can't open %s\n", CameraManager::sm_imageDir.c_str());
+    fprintf(stderr, "warn,file,%s,can't open\n", CameraManager::sm_imageDir.c_str());
     return -1;
   }
   int numBundles = 0;

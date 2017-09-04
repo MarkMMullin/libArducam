@@ -106,21 +106,15 @@ class Arducam {
   inline int CameraNumber() const { return m_cameraNo; }
   // return the camerabank instamnce
   inline CameraBank* GetCameraBank() {return m_cameraBank; }
-  inline void EnableIO() {
-    //write_reg(ARDUCHIP_GPIO,0);
-  }
+  inline void waitOnVSync() { while(read_reg(Arducam::ARDUCHIP_TRIG) & 1);}
+  
   // make an image capture request
   void capture();
   // true as long as image is actively being captured
   // external agents must increment the shot counter because the cameras opinion doesn't matter
   void incrementShotCounter() { m_shotCounter++;}
   uint32_t getShotCounter() const { return m_shotCounter;}
-  inline bool isCapturing() {
-    if(!m_isCapturing) return false;
-
-    m_isCapturing = !(read_reg(ARDUCHIP_TRIG) & CAP_DONE_MASK);
-    return m_isCapturing;
-  }
+  short isCapturing();
   // record the name of the last saved file from this camera for monitoring purposes
   inline void setLastSave(const char* fname)
   {
@@ -154,13 +148,20 @@ class Arducam {
   EResolution getResolution() const { return m_resolution; }
   
   
-  //todo default resolution needs to be per sensor type
+  //todo defaults  need to be per sensor type
   // set default global resolution for camera initialization
   static void setDefaultResolution(EResolution resolution) {sm_resolution = resolution; }
   // get default global resolution for camera initialization
   static const EResolution getDefaultResolution() { return sm_resolution; }
   // global default resolution constant
   static EResolution sm_resolution;
+  // set the global quantization default
+  static void setDefaultQuantization(int quantization) { sm_quantization = quantization;}
+  // get the global quantization default
+  static const int getDefaultQuantization() {return sm_quantization;}
+  // global default quantization constant
+  static int sm_quantization;
+  
   // set the resolution of this camera and invoke any necessary sensor program changes
   virtual bool setResolution(EResolution resolution) = 0;
   // parse a resolution string and return the resolution
@@ -183,6 +184,9 @@ class Arducam {
   inline void delayus(uint32_t delay) const {
     usleep( delay);
   }
+  
+  inline pthread_mutex_t* getLastImageBufferMutex()  { return &m_lastImageBufferMutex; }
+  inline pthread_cond_t* getImageUpdateConditionVariable()  { return &m_imageUpdateConditionVariable; }
  protected:
   // reset the camera
   bool reset();
@@ -331,6 +335,8 @@ class Arducam {
   const sensor_reg* m_resolutionProgram;
   // gate for updating the lastImageBuffer data
   pthread_mutex_t m_lastImageBufferMutex;
+  // condition variable for signalling an update to the image
+  pthread_cond_t m_imageUpdateConditionVariable;
   void updateImageBuffer();
   static uint8_t* sm_imageBuffer[2];
   static uint32_t sm_imageBufferSize;
@@ -339,6 +345,7 @@ class Arducam {
   static bool sm_isJPEG;
   static EImageAquisitionMode sm_acquisitionMode;
   static uint32_t sm_imagebuffer_size;
+
 
   // instructions
   static const int ARDUCHIP_READ_FIFO  = 0x3D;

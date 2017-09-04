@@ -31,6 +31,6 @@
    
   static void Load(configuru::Config& cfg);
  private:
-  static void processCameraConfig(const std::string& cfg);
+  static void processCameraConfig(const std::string& cfg,const std::string& map);
  };
 #endif

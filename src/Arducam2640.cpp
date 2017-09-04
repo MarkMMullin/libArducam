@@ -31,6 +31,7 @@ Arducam2640::Arducam2640(int cameraNumber,CameraBank* cameraBank,int SPIFD,int I
 {
   m_sensor_addr = SENSOR_ADDRESS;
   setResolution(Arducam::getDefaultResolution());
+  setQuantization(Arducam::getDefaultQuantization());
 }
 // implemented by each camera to get the high byte of the camera ID word and test it against the word for this camera
 
@@ -64,12 +65,12 @@ uint8_t Arducam2640::getLowDeviceIdByte()
      delayms(1000);
      
 #if LOG_INFO
-     fprintf(stderr,"info:: load jpeg init\n");
+     fprintf(stderr,"info,camera,%d,load jpeg init\n",m_cameraNo);
 #endif
      wrSensorRegs8_8(OV2640_JPEG_INIT);
      
 #if LOG_INFO
-     fprintf(stderr,"info:: load yuv422 init\n");
+     fprintf(stderr,"info,camera,%d,load yuv422 init\n",m_cameraNo);
 #endif
      wrSensorRegs8_8(OV2640_YUV422);
      
@@ -81,7 +82,7 @@ uint8_t Arducam2640::getLowDeviceIdByte()
      wrSensorReg8_8(0xff, 0x01);
      wrSensorReg8_8(0x15, 0x00);
 #if LOG_INFO
-     fprintf(stderr,"info:: load resolution specific init\n");
+     fprintf(stderr,"info,camera,%d,load resolution specific init\n",m_cameraNo);
 #endif
      wrSensorRegs8_8(m_resolutionProgram);
    } else
@@ -89,7 +90,7 @@ uint8_t Arducam2640::getLowDeviceIdByte()
        wrSensorRegs8_8(OV2640_QVGA);
      }
 #if LOG_INFO
-     fprintf(stderr,"info:: completed program load\n");
+     fprintf(stderr,"info,camera,%d,completed program load\n",m_cameraNo);
 #endif
 }
 void Arducam2640::setQuantization(uint8_t value)

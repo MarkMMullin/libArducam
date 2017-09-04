@@ -34,6 +34,14 @@ class CameraManager {
     return std::string(vb);
   }
   static inline std::string GetImageDirectory() { return sm_imageDir; }
+  // get a camera taking the software config remapping into account
+  inline Arducam* getMappedCamera(int mappedIndex)
+  {
+    if(sm_indexmap[mappedIndex] < 8)
+      return m_cameras[sm_indexmap[mappedIndex]];
+    else
+      return NULL;
+  }
   inline Arducam* getCamera(int cameraIndex) { return m_cameras[cameraIndex]; }
 
   void StartCapture();
@@ -75,5 +83,6 @@ class CameraManager {
   static int sm_maxPasses;
   static bool sm_recordingOn;
   static std::string sm_imageDir;
+  static int sm_indexmap[8];
 };
 #endif

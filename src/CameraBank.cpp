@@ -30,6 +30,7 @@
 
 #include "CameraBank.h"
 
+#define LOG_GPIO_INFO 0
 int CameraBank::sm_busSpeed = 0;
 Arducam::ECameraType CameraBank::sm_cameraType[8];
 CameraBank*CameraBank::sm_banks[2];
@@ -52,7 +53,7 @@ void CameraBank::Activate(Arducam* camera)
   int deviceIndex = camera->CameraNumber() % 4;
 
 #if LOG_INFO
-  fprintf(stderr,"info:activating camera %d as device %d in bank %d\n",
+  fprintf(stderr,"info,camera,%d,activating,device,%d,bank,%d\n",
 	  camera->CameraNumber(),deviceIndex,bankIndex);
 #endif
 
@@ -75,12 +76,8 @@ void CameraBank::Activate(Arducam* camera)
   for(int i = 0;i < 4;i++)
     if(pinval[i] != -1)
       gpioSet(sm_gpioPins[i],pinval[i]);
-  // enable camera i/o
-  camera->EnableIO();
+
   
-#if LOG_INFO
-  fprintf(stderr,"info:activated camera %d in bank %d\n",deviceIndex,bankIndex);
-#endif
 }
 CameraBank::CameraBank(int bankNumber)
 {
@@ -163,7 +160,7 @@ void CameraBank::gpioSet(int gpio, int value)
   sprintf(buf, "%d", value);
   write(fd, buf, 1);
   close(fd);
-#if LOG_INFO
-  fprintf(stderr,"GPIO %d = %d\n",gpio,value);
+#if LOG_GPIO_INFO
+  fprintf(stderr,"info,GPIO,pin, %d,value,%d\n",gpio,value);
 #endif
 }
